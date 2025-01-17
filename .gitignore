@@ -1,0 +1,76 @@
+# Scala & SBT
+target/
+lib_managed/
+src_managed/
+project/boot/
+project/plugins/project/
+project/target/
+project/project/
+.bsp/
+.scala-build/
+
+# IDE - IntelliJ IDEA
+.idea/
+.idea_modules/
+*.iml
+*.iws
+*.ipr
+out/
+
+# IDE - VS Code
+.vscode/
+.metals/
+.bloop/
+metals.sbt
+.ammonite/
+
+# IDE - Eclipse
+.project
+.classpath
+.settings/
+bin/
+
+# Mac OS
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Environment variables
+.env
+.env.*
+
+# Application specific
+conf/application.prod.conf
+conf/application.dev.conf
+conf/application.test.conf
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+*~
+
+# Build files
+*.class
+*.jar
+dist/
+
+# Dependency directories
+node_modules/
+bower_components/
+
+# Coverage reports
+coverage/
+.coverage
+.coveralls.yml
+
+# Scala Worksheets
+*.sc
+
+# Local configuration
+local.*
+*.local
