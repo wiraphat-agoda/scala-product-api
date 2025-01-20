@@ -3,6 +3,7 @@ package com.example.pkg.config
 import pureconfig._
 import pureconfig.generic.auto._
 import cats.effect.{Blocker, ContextShift, IO}
+import pureconfig.generic.semiauto.deriveReader
 
 case class DatabaseConfig(
                            host: String,
@@ -19,9 +20,25 @@ case class ServerConfig(
                          port: Int
                        )
 
+case class KafkaConfig(
+                        bootstrapServers: String,
+                        topic: String,
+                        clientId: String,
+                        acks: String = "all",
+                        retries: Int = 3,
+                        batchSize: Int = 16384,
+                        lingerMs: Int = 1,
+                        bufferMemory: Int = 33554432
+                      )
+
+object KafkaConfig {
+  implicit val configReader: ConfigReader[KafkaConfig] = deriveReader[KafkaConfig]
+}
+
 case class AppConfig(
                       server: ServerConfig,
-                      database: DatabaseConfig
+                      database: DatabaseConfig,
+                      kafka: KafkaConfig
                     )
 
 object AppConfig {

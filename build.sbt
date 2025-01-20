@@ -4,6 +4,7 @@ val DoobieVersion = "0.13.4"
 val PureConfigVersion = "0.17.2"
 val LogbackVersion = "1.3.11"
 val CatsEffectVersion = "2.2.0"
+val KafkaVersion = "2.8.0"
 
 lazy val root = (project in file("."))
   .enablePlugins(BuildInfoPlugin)  // เพิ่ม BuildInfo plugin
@@ -23,7 +24,9 @@ lazy val root = (project in file("."))
       "org.tpolecat"          %% "doobie-hikari"        % DoobieVersion,
       "com.github.pureconfig" %% "pureconfig"           % PureConfigVersion,
       "ch.qos.logback"        %  "logback-classic"      % LogbackVersion,
-      "org.typelevel"         %% "cats-effect"          % CatsEffectVersion
+      "org.typelevel"         %% "cats-effect"          % CatsEffectVersion,
+      "org.apache.kafka" % "kafka-clients" % KafkaVersion,
+      "org.apache.kafka" %% "kafka-streams-scala" % KafkaVersion
     ),
 
     // BuildInfo settings

@@ -1,13 +1,12 @@
-package com.example.internal.adapter.repository.product
+package com.example.internal.adapter.repository.product.db
 
 import cats.effect.IO
 import com.example.internal.core.product.entity.Product
-import com.example.internal.core.product.port.ProductRepository
+import com.example.internal.core.product.port.ProductDbRepository
 import doobie._
 import doobie.implicits._
-import doobie.postgres.implicits._
 
-class ProductRepositoryImpl(xa: Transactor[IO]) extends ProductRepository {
+class ProductDbRepositoryImpl(xa: Transactor[IO]) extends ProductDbRepository {
   private val tableName = "products"
 
   import Product._
