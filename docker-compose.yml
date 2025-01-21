@@ -33,8 +33,35 @@ services:
       - postgres
     restart: unless-stopped
 
+  redis:
+    image: reg-hk.agodadev.io/dockerhub/redis:7.4.2
+    container_name: product_api_redis
+    command: ["redis-server", "--appendonly", "yes"] # Enables persistence
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - redis_network
+    restart: unless-stopped
+
+  redisinsight:
+    image: reg-hk.agodadev.io/dockerhub/redislabs/redisinsight:1.14.0
+    container_name: product_api_redisinsight
+    environment:
+      - REDISINSIGHT_AUTH_ENABLED=false # Disable authentication for simplicity
+    ports:
+      - "8002:8001"
+    networks:
+      - redis_network
+    depends_on:
+      - redis
+    restart: unless-stopped
+
 networks:
   postgres_network:
+    driver: bridge
+  redis_network:
     driver: bridge
 
 volumes:
@@ -42,3 +69,5 @@ volumes:
     name: product_api_postgres_data
   pgadmin_data:
     name: product_api_pgadmin_data
+  redis_data:
+    name: product_api_redis_data
