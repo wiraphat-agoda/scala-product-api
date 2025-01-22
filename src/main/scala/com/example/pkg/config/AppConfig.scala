@@ -31,6 +31,11 @@ case class KafkaConfig(
                         bufferMemory: Int = 33554432
                       )
 
+case class RedisConfig(
+                      host: String,
+                      port: Int
+                      )
+
 object KafkaConfig {
   implicit val configReader: ConfigReader[KafkaConfig] = deriveReader[KafkaConfig]
 }
@@ -38,7 +43,8 @@ object KafkaConfig {
 case class AppConfig(
                       server: ServerConfig,
                       database: DatabaseConfig,
-                      kafka: KafkaConfig
+                      kafka: KafkaConfig,
+                      redis: RedisConfig
                     )
 
 object AppConfig {

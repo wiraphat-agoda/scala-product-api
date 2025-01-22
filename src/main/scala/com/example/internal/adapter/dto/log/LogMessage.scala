@@ -15,7 +15,8 @@ case class LogMessage(
                        statusCode: Option[Int],
                        duration: Option[Double],
                        userId: Option[String],
-                       error: Option[String]
+                       error: Option[String],
+                       detail: Option[String]
                      )
 
 object LogMessage {

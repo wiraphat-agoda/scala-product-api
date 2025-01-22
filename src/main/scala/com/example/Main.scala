@@ -3,12 +3,14 @@ package com.example
 import cats.effect.{ExitCode, IO, IOApp}
 import com.example.internal.adapter.handler.health.HealthCheckHandler
 import com.example.internal.adapter.handler.product.ProductHandler
+import com.example.internal.adapter.repository.product.cache.ProductCacheRepositoryImpl
 import com.example.internal.adapter.repository.product.db.ProductDbRepositoryImpl
 import com.example.internal.adapter.repository.product.event.ProductEventRepositoryImpl
 import com.example.internal.core.product.service.ProductServiceImpl
 import com.example.pkg.config.AppConfig
 import com.example.pkg.database.DatabaseTransactor
 import com.example.pkg.kafka.KafkaProducerClient
+import com.example.pkg.redis.RedisClient
 import org.http4s.implicits._
 import org.http4s.server.Router
 import org.http4s.server.blaze.BlazeServerBuilder
@@ -25,7 +27,8 @@ object Main extends IOApp {
       (for {
         xa <- DatabaseTransactor.create(config)
         messageBroker <- KafkaProducerClient[IO](config.kafka)
-      } yield (xa, messageBroker)).use { case (xa, messageBroker) =>
+        redisClient <- RedisClient(host = config.redis.host, port = config.redis.port)
+      } yield (xa, messageBroker, redisClient)).use { case (xa, messageBroker, redisClient) =>
 
         // Initialize repositories
         val productDbRepo = new ProductDbRepositoryImpl(xa)
@@ -33,9 +36,10 @@ object Main extends IOApp {
           messageBroker = messageBroker,
           serviceName = "product-service"
         )
+        val productCacheRepo = new ProductCacheRepositoryImpl(redisClient)
 
         // Initialize service with both repositories
-        val productService = new ProductServiceImpl(productDbRepo, productEventRepo)
+        val productService = new ProductServiceImpl(productDbRepo, productEventRepo, productCacheRepo)
 
         // Initialize handlers
         val healthCheckHandler = new HealthCheckHandler(xa)

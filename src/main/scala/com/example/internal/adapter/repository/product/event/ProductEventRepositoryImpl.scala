@@ -19,14 +19,26 @@ class ProductEventRepositoryImpl(
   }
 
   private def createLogMessage(event: ProductEvent): LogMessage = {
-    val (level, message, error, method, path, statusCode) = event match {
+    val (level, message, error, method, path, statusCode, detail) = event match {
+      case ProductEvent.ProductOperationSucceeded(_, detail, _) =>
+        ("info",
+          s"Product retrieved successfully.",
+          None,
+          "GET",
+          "/api/products",
+          201,
+          Some(detail)
+        )
+
       case ProductEvent.ProductCreated(product, _) =>
         ("info",
           s"Product created successfully with ID: ${product.id.getOrElse("N/A")}, name: ${product.name}",
           None,
           "POST",
           "/api/products",
-          201)
+          201,
+          None
+        )
 
       case ProductEvent.ProductUpdated(product, _) =>
         ("info",
@@ -34,7 +46,9 @@ class ProductEventRepositoryImpl(
           None,
           "PUT",
           s"/api/products/${product.id.getOrElse("N/A")}",
-          200)
+          200,
+          None
+        )
 
       case ProductEvent.ProductDeleted(productId, _) =>
         ("info",
@@ -42,7 +56,9 @@ class ProductEventRepositoryImpl(
           None,
           "DELETE",
           s"/api/products/$productId",
-          200)
+          200,
+          None
+        )
 
       case ProductEvent.ProductOperationFailed(operation, productId, errorMsg, _) =>
         ("error",
@@ -55,7 +71,9 @@ class ProductEventRepositoryImpl(
             case _ => "GET"
           },
           s"/api/products${productId.map(id => s"/$id").getOrElse("")}",
-          500)
+          500,
+          None
+        )
     }
     val logMsg = LogMessage(
       timestamp = event.timestamp,
@@ -68,7 +86,8 @@ class ProductEventRepositoryImpl(
       statusCode = Some(statusCode),
       duration = None,
       userId = None,
-      error = error
+      error = error,
+      detail = detail
     )
     println(logMsg)
 

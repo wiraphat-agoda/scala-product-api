@@ -39,6 +39,12 @@ object ProductEvent {
                                      timestamp: OffsetDateTime = OffsetDateTime.now()
                                    ) extends ProductEvent
 
+  case class ProductOperationSucceeded(
+                                      productId: Option[Long],
+                                      detail: String,
+                                      timestamp: OffsetDateTime = OffsetDateTime.now()
+                                      ) extends ProductEvent
+
   implicit val encoder: Encoder[ProductEvent] = deriveEncoder[ProductEvent]
   implicit val decoder: Decoder[ProductEvent] = deriveDecoder[ProductEvent]
 }
