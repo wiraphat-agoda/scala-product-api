@@ -1,29 +1,29 @@
-package com.example.internal.adapter.repository.product.event
+package com.example.internal.core.product.service
 
 import cats.effect.IO
 import cats.implicits._
-import com.example.internal.adapter.constant.http.HttpMethod
+import com.example.constant.HttpMethod
 import com.example.internal.adapter.dto.log.LogMessage
-import com.example.internal.adapter.dto.product.{ProductEvent, ProductEventDTO}
-import com.example.internal.core.product.port.ProductEventRepository
-import com.example.pkg.kafka.MessageBroker
+import com.example.internal.adapter.dto.event.ProductEvent
+import com.example.internal.adapter.infrastructure.kafka.EventProducer
+import com.example.internal.core.product.port.ProductEventService
 
 import java.util.UUID
 
-class ProductEventRepositoryImpl(
-                                  messageBroker: MessageBroker[IO],
-                                  serviceName: String = "product-service"
-                                ) extends ProductEventRepository {
+class ProductEventServiceImpl(
+                               eventProducer: EventProducer[IO],
+                               serviceName: String = "event-service"
+                                ) extends ProductEventService {
 
-  def publish(event: ProductEventDTO): IO[Unit] = {
+  def publish(event: ProductEvent): IO[Unit] = {
     val logMessage = createLogMessage(event)
-    messageBroker.sendLog(logMessage)
+    eventProducer.sendLog(logMessage)
   }
 
-  private def createLogMessage(event: ProductEventDTO): LogMessage = {
+  private def createLogMessage(event: ProductEvent): LogMessage = {
     val (level, message, error, method, path, statusCode, detail) = event match {
       // GET - All products (without productId)
-      case ProductEventDTO(HttpMethod.GET, true, _, detail, _, None) =>
+      case ProductEvent(HttpMethod.GET, true, _, detail, _, None) =>
         ("info",
           "Products retrieved successfully.",
           None,
@@ -33,8 +33,8 @@ class ProductEventRepositoryImpl(
           Some(detail)
         )
 
-      // GET - Single product (with productId)
-      case ProductEventDTO(HttpMethod.GET, true, _, detail, _, Some(pid)) =>
+      // GET - Single event (with productId)
+      case ProductEvent(HttpMethod.GET, true, _, detail, _, Some(pid)) =>
         ("info",
           s"Product ID:$pid retrieved successfully.",
           None,
@@ -45,7 +45,7 @@ class ProductEventRepositoryImpl(
         )
 
       // POST - Always should have productId after successful creation
-      case ProductEventDTO(HttpMethod.POST, true, _, detail, _, Some(pid)) =>
+      case ProductEvent(HttpMethod.POST, true, _, detail, _, Some(pid)) =>
         ("info",
           s"Product ID:$pid created successfully.",
           None,
@@ -56,7 +56,7 @@ class ProductEventRepositoryImpl(
         )
 
       // PUT - Must have productId
-      case ProductEventDTO(HttpMethod.PUT, true, _, detail, _, Some(pid)) =>
+      case ProductEvent(HttpMethod.PUT, true, _, detail, _, Some(pid)) =>
         ("info",
           s"Product ID:$pid updated successfully.",
           None,
@@ -67,7 +67,7 @@ class ProductEventRepositoryImpl(
         )
 
       // DELETE - Must have productId
-      case ProductEventDTO(HttpMethod.DELETE, true, _, detail, _, Some(pid)) =>
+      case ProductEvent(HttpMethod.DELETE, true, _, detail, _, Some(pid)) =>
         ("info",
           s"Product ID:$pid deleted successfully.",
           None,
@@ -78,7 +78,7 @@ class ProductEventRepositoryImpl(
         )
 
       // Error cases with specific error messages
-      case ProductEventDTO(method, false, errorMsg, detail, _, maybeId) =>
+      case ProductEvent(method, false, errorMsg, detail, _, maybeId) =>
         val baseMessage = method match {
           case HttpMethod.GET =>
             maybeId.map(pid => s"Product ID:$pid").getOrElse("All products") + " retrieved fail."
@@ -100,7 +100,7 @@ class ProductEventRepositoryImpl(
         )
 
       // Catch-all case for unexpected patterns
-      case ProductEventDTO(method, _, msg, detail, _, _) =>
+      case ProductEvent(method, _, msg, detail, _, _) =>
         ("error",
           "Unexpected event pattern",
           Some(msg),

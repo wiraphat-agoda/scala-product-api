@@ -2,7 +2,7 @@ package com.example.internal.adapter.handler.health
 
 import cats.effect.IO
 import com.example.BuildInfo
-import com.example.internal.adapter.dto.health.{DatabaseStatus, HealthStatusDTO}
+import com.example.internal.adapter.dto.health.{DatabaseStatus, HealthStatus}
 import doobie.implicits._
 import doobie.util.transactor.Transactor
 import org.http4s.HttpRoutes
@@ -32,7 +32,7 @@ class HealthCheckHandler(xa: Transactor[IO]) {
     case GET -> Root =>
       for {
         dbStatus <- checkDatabase
-        status = HealthStatusDTO(
+        status = HealthStatus(
           status = "healthy",
           version = BuildInfo.version,
           timestamp = getCurrentTimestamp,

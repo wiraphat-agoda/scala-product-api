@@ -1,4 +1,4 @@
-package com.example.pkg.kafka
+package com.example.internal.adapter.infrastructure.kafka
 
 import cats.effect.{Resource, Sync, Timer}
 import cats.implicits._
@@ -12,12 +12,8 @@ import java.util.Properties
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 
-trait MessageBroker[F[_]] {
-  def sendLog(logMessage: LogMessage): F[Unit]
-}
-
-object KafkaProducerClient {
-  def apply[F[_]: Sync: Timer](config: KafkaConfig): Resource[F, MessageBroker[F]] = {
+object KafkaProducer {
+  def apply[F[_]: Sync: Timer](config: KafkaConfig): Resource[F, EventProducer[F]] = {
     def createProducer: F[KafkaProducer[String, String]] = Sync[F].delay {
       val props = new Properties()
       props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, config.bootstrapServers)
@@ -34,7 +30,7 @@ object KafkaProducerClient {
     }
 
     Resource.make(createProducer)(producer => Sync[F].delay(producer.close())).map { producer =>
-      new MessageBroker[F] {
+      new EventProducer[F] {
         def sendLog(logMessage: LogMessage): F[Unit] = {
           Sync[F].delay {
             val record = new ProducerRecord[String, String](

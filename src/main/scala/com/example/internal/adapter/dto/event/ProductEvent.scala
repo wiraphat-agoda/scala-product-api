@@ -1,8 +1,8 @@
-package com.example.internal.adapter.dto.product
+package com.example.internal.adapter.dto.event
 
 import java.time.OffsetDateTime
 
-case class ProductEventDTO(
+case class ProductEvent(
                           httpMethod: String, // GET , POST , PUT , DELETE
                           success: Boolean, // true , false
                           message: String,  // error message

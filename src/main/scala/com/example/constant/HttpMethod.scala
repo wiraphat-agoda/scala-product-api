@@ -1,4 +1,4 @@
-package com.example.internal.adapter.constant.http
+package com.example.constant
 
 object HttpMethod {
   val GET = "GET"

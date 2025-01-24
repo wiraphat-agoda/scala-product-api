@@ -3,14 +3,13 @@ package com.example
 import cats.effect.{ExitCode, IO, IOApp}
 import com.example.internal.adapter.handler.health.HealthCheckHandler
 import com.example.internal.adapter.handler.product.ProductHandler
+import com.example.internal.adapter.infrastructure.database.PostgresTransactor
+import com.example.internal.adapter.infrastructure.kafka.KafkaProducer
+import com.example.internal.adapter.infrastructure.redis.RedisClient
 import com.example.internal.adapter.repository.product.cache.ProductCacheRepositoryImpl
 import com.example.internal.adapter.repository.product.db.ProductDbRepositoryImpl
-import com.example.internal.adapter.repository.product.event.ProductEventRepositoryImpl
-import com.example.internal.core.product.service.ProductServiceImpl
+import com.example.internal.core.product.service.{ProductEventServiceImpl, ProductServiceImpl}
 import com.example.pkg.config.AppConfig
-import com.example.pkg.database.DatabaseTransactor
-import com.example.pkg.kafka.KafkaProducerClient
-import com.example.pkg.redis.RedisClient
 import org.http4s.implicits._
 import org.http4s.server.Router
 import org.http4s.server.blaze.BlazeServerBuilder
@@ -25,21 +24,18 @@ object Main extends IOApp {
     appConfig.flatMap { config =>
       // Create resources for both Database and Kafka
       (for {
-        xa <- DatabaseTransactor.create(config)
-        messageBroker <- KafkaProducerClient[IO](config.kafka)
-        redisClient <- RedisClient(host = config.redis.host, port = config.redis.port)
-      } yield (xa, messageBroker, redisClient)).use { case (xa, messageBroker, redisClient) =>
+        xa <- PostgresTransactor[IO](config.database)
+        eventProducer <- KafkaProducer[IO](config.kafka)
+        redisClient <- RedisClient[IO](config.redis)
+      } yield (xa, eventProducer, redisClient)).use { case (xa, eventProducer, redisClient) =>
 
         // Initialize repositories
         val productDbRepo = new ProductDbRepositoryImpl(xa)
-        val productEventRepo = new ProductEventRepositoryImpl(
-          messageBroker = messageBroker,
-          serviceName = "product-service"
-        )
         val productCacheRepo = new ProductCacheRepositoryImpl(redisClient)
 
         // Initialize service with both repositories
-        val productService = new ProductServiceImpl(productDbRepo, productEventRepo, productCacheRepo)
+        val productEventService = new ProductEventServiceImpl(eventProducer, "product-svc")
+        val productService = new ProductServiceImpl(productEventService, productDbRepo, productCacheRepo)
 
         // Initialize handlers
         val healthCheckHandler = new HealthCheckHandler(xa)

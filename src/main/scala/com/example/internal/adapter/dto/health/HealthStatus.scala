@@ -1,6 +1,6 @@
 package com.example.internal.adapter.dto.health
 
-case class HealthStatusDTO(
+case class HealthStatus(
                          status: String,
                          version: String,
                          timestamp: String,

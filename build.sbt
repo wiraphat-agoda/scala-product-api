@@ -11,7 +11,7 @@ lazy val root = (project in file("."))
   .enablePlugins(BuildInfoPlugin)
   .settings(
     organization := "com.example",
-    name := "product-api",
+    name := "event-api",
     version := "0.1.0-SNAPSHOT",
     scalaVersion := "2.12.18",
     libraryDependencies ++= Seq(
