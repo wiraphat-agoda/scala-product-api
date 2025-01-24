@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # Database Services
   postgres:
     image: postgres:15-alpine3.18
     container_name: product_api_postgres
@@ -14,7 +15,7 @@ services:
     ports:
       - "5432:5432"
     networks:
-      - postgres_network
+      - product_api_network
     restart: unless-stopped
 
   pgadmin:
@@ -28,46 +29,97 @@ services:
     ports:
       - "5050:80"
     networks:
-      - postgres_network
+      - product_api_network
     depends_on:
       - postgres
     restart: unless-stopped
 
+  # Cache Services
   redis:
     image: reg-hk.agodadev.io/dockerhub/redis:7.4.2
     container_name: product_api_redis
-    command: ["redis-server", "--appendonly", "yes"] # Enables persistence
+    command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis_data:/data
     ports:
       - "6379:6379"
     networks:
-      - redis_network
+      - product_api_network
     restart: unless-stopped
 
   redisinsight:
     image: reg-hk.agodadev.io/dockerhub/redislabs/redisinsight:1.14.0
     container_name: product_api_redisinsight
     environment:
-      - REDISINSIGHT_AUTH_ENABLED=false # Disable authentication for simplicity
+      - REDISINSIGHT_AUTH_ENABLED=false
     ports:
       - "8002:8001"
     networks:
-      - redis_network
+      - product_api_network
     depends_on:
       - redis
     restart: unless-stopped
 
+  # Message Broker Services
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: product_api_zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_log:/var/lib/zookeeper/log
+    networks:
+      - product_api_network
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: product_api_kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_DELETE_TOPIC_ENABLE: 'true'
+      KAFKA_NUM_PARTITIONS: 3
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - product_api_network
+    restart: unless-stopped
+
 networks:
-  postgres_network:
-    driver: bridge
-  redis_network:
+  product_api_network:
+    name: product_api_network
     driver: bridge
 
 volumes:
+  # Database volumes
   postgres_data:
     name: product_api_postgres_data
   pgadmin_data:
     name: product_api_pgadmin_data
+
+  # Cache volumes
   redis_data:
     name: product_api_redis_data
+
+  # Message broker volumes
+  zookeeper_data:
+    name: product_api_zookeeper_data
+  zookeeper_log:
+    name: product_api_zookeeper_log
+  kafka_data:
+    name: product_api_kafka_data
