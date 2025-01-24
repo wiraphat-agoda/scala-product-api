@@ -1,11 +1,14 @@
-// com/example/internal/core/product/service/ProductServiceImpl.scala
 package com.example.internal.core.product.service
 
 import cats.effect.IO
 import cats.implicits._
-import com.example.internal.adapter.dto.product.ProductEvent
+import com.example.internal.adapter.constant.http.HttpMethod
+import com.example.internal.adapter.dto.product.ProductEventDTO
 import com.example.internal.core.product.entity.Product
 import com.example.internal.core.product.port.{ProductCacheRepository, ProductDbRepository, ProductEventRepository, ProductService}
+
+import java.time.OffsetDateTime
+import scala.concurrent.duration._
 
 class ProductServiceImpl(
                           productDbRepo: ProductDbRepository,
@@ -13,14 +16,69 @@ class ProductServiceImpl(
                           productCacheRepo: ProductCacheRepository
                         ) extends ProductService {
 
+  private val DefaultCacheTTL = 3600 // 1 hour in seconds
+  private val InvalidationTTL = 1 // 1 second for invalidated entries
+
+  // Empty values for invalidation
+  private val EmptyProduct = Product(None, "", "", BigDecimal(0))
+  private val EmptyProductList = List.empty[Product]
+
+  private def invalidateById(id: Long): IO[Unit] = {
+    productCacheRepo.setById(id, EmptyProduct, InvalidationTTL)
+  }
+
+  private def invalidateAll(): IO[Unit] = {
+    productCacheRepo.setAll(EmptyProductList, InvalidationTTL)
+  }
+
+  private def createSuccessEvent(
+                                  method: String,
+                                  productId: Option[Long],
+                                  detail: String
+                                ): ProductEventDTO = {
+    ProductEventDTO(
+      httpMethod = method,
+      success = true,
+      message = "",
+      detail = detail,
+      timestamp = OffsetDateTime.now(),
+      productId = productId
+    )
+  }
+
+  private def createErrorEvent(
+                                method: String,
+                                productId: Option[Long],
+                                errorMessage: String
+                              ): ProductEventDTO = {
+    ProductEventDTO(
+      httpMethod = method,
+      success = false,
+      message = errorMessage,
+      detail = "error",
+      timestamp = OffsetDateTime.now(),
+      productId = productId
+    )
+  }
+
   def createProduct(product: Product): IO[Product] = {
     (for {
+      // Create in DB first
       createdProduct <- productDbRepo.create(product)
-      _ <- productEventRepo.publish(ProductEvent.ProductCreated(createdProduct))
+      // Update cache (write-through)
+      _ <- productCacheRepo.setById(createdProduct.id.get, createdProduct, DefaultCacheTTL)
+      // Invalidate the all-products cache
+      _ <- invalidateAll()
+      // Publish event
+      _ <- productEventRepo.publish(createSuccessEvent(
+        HttpMethod.POST,
+        Some(createdProduct.id.get),
+        "db_created"
+      ))
     } yield createdProduct)
       .handleErrorWith { error =>
         productEventRepo.publish(
-          ProductEvent.ProductOperationFailed("create", None, error.getMessage)
+          createErrorEvent(HttpMethod.POST, None, error.getMessage)
         ) *> IO.raiseError(error)
       }
   }
@@ -29,57 +87,107 @@ class ProductServiceImpl(
     (for {
       cachedProduct <- productCacheRepo.getById(id)
       product <- cachedProduct match {
-        case Some(p) => IO.pure(Some(p))
-        case None => for {
-          dbProduct <- productDbRepo.getById(id)
-
-          _ <- dbProduct.traverse(p => productCacheRepo.setById(id, p, 3600))
-        } yield dbProduct
+        case Some(p) if p == EmptyProduct =>
+          // Found invalidated entry
+          productEventRepo.publish(
+            createSuccessEvent(HttpMethod.GET, Some(id), "cache_invalidated")
+          ) *> productDbRepo.getById(id).flatMap {
+            case Some(dbProduct) =>
+              productCacheRepo.setById(id, dbProduct, DefaultCacheTTL) *>
+                productEventRepo.publish(
+                  createSuccessEvent(HttpMethod.GET, Some(id), "db_found")
+                ) *>
+                IO.pure(Some(dbProduct))
+            case None =>
+              invalidateById(id) *>
+                productEventRepo.publish(
+                  createSuccessEvent(HttpMethod.GET, Some(id), "not_found")
+                ) *>
+                IO.pure(None)
+          }
+        case Some(p) =>
+          // Cache hit
+          productEventRepo.publish(
+            createSuccessEvent(HttpMethod.GET, Some(id), "cache_hit")
+          ) *> IO.pure(Some(p))
+        case None =>
+          // Cache miss
+          for {
+            _ <- productEventRepo.publish(
+              createSuccessEvent(HttpMethod.GET, Some(id), "cache_miss")
+            )
+            dbProduct <- productDbRepo.getById(id)
+            _ <- dbProduct match {
+              case Some(p) =>
+                productCacheRepo.setById(id, p, DefaultCacheTTL) *>
+                  productEventRepo.publish(
+                    createSuccessEvent(HttpMethod.GET, Some(id), "db_found")
+                  )
+              case None =>
+                invalidateById(id) *>
+                  productEventRepo.publish(
+                    createSuccessEvent(HttpMethod.GET, Some(id), "not_found")
+                  )
+            }
+          } yield dbProduct
       }
     } yield product)
       .handleErrorWith { error =>
         productEventRepo.publish(
-          ProductEvent.ProductOperationFailed("get", Some(id), error.getMessage)
+          createErrorEvent(HttpMethod.GET, Some(id), error.getMessage)
         ) *> IO.raiseError(error)
       }
   }
 
   def getAllProducts: IO[List[Product]] = {
     (for {
-      // Try to get from cache first
       cachedProducts <- productCacheRepo.getAll()
-
-      products <- if (cachedProducts.nonEmpty) {
-        // If found in cache, return cached data and publish event
-        productEventRepo.publish(
-          ProductEvent.ProductOperationSucceeded(None, "cache_hit")
-        ) *> IO.pure(cachedProducts)
-      } else {
-        // If not in cache, get from DB
+      products <- if (cachedProducts == EmptyProductList) {
+        // Found invalidated list
         for {
-          // Publish cache miss event
           _ <- productEventRepo.publish(
-            ProductEvent.ProductOperationSucceeded(None, "cache_miss")
+            createSuccessEvent(HttpMethod.GET, None, "cache_invalidated")
           )
-          // Get from DB
           dbProducts <- productDbRepo.getAll
-          // Cache the products if found
           _ <- if (dbProducts.nonEmpty) {
-            productCacheRepo.setAll(dbProducts, 3600) *> // Cache for 1 hour
+            productCacheRepo.setAll(dbProducts, DefaultCacheTTL) *>
               productEventRepo.publish(
-                ProductEvent.ProductOperationSucceeded(None, "db_found")
+                createSuccessEvent(HttpMethod.GET, None, "db_found")
               )
           } else {
-            productEventRepo.publish(
-              ProductEvent.ProductOperationSucceeded(None, "db_empty")
-            )
+            invalidateAll() *>
+              productEventRepo.publish(
+                createSuccessEvent(HttpMethod.GET, None, "db_empty")
+              )
+          }
+        } yield dbProducts
+      } else if (cachedProducts.nonEmpty) {
+        productEventRepo.publish(
+          createSuccessEvent(HttpMethod.GET, None, "cache_hit")
+        ) *> IO.pure(cachedProducts)
+      } else {
+        for {
+          _ <- productEventRepo.publish(
+            createSuccessEvent(HttpMethod.GET, None, "cache_miss")
+          )
+          dbProducts <- productDbRepo.getAll
+          _ <- if (dbProducts.nonEmpty) {
+            productCacheRepo.setAll(dbProducts, DefaultCacheTTL) *>
+              productEventRepo.publish(
+                createSuccessEvent(HttpMethod.GET, None, "db_found")
+              )
+          } else {
+            invalidateAll() *>
+              productEventRepo.publish(
+                createSuccessEvent(HttpMethod.GET, None, "db_empty")
+              )
           }
         } yield dbProducts
       }
     } yield products)
       .handleErrorWith { error =>
         productEventRepo.publish(
-          ProductEvent.ProductOperationFailed("getAll", None, error.getMessage)
+          createErrorEvent(HttpMethod.GET, None, error.getMessage)
         ) *> IO.raiseError(error)
       }
   }
@@ -87,13 +195,22 @@ class ProductServiceImpl(
   def updateProduct(id: Long, product: Product): IO[Option[Product]] = {
     (for {
       maybeUpdated <- productDbRepo.update(id, product)
-      _ <- maybeUpdated.traverse(updated =>
-        productEventRepo.publish(ProductEvent.ProductUpdated(updated))
-      )
+      _ <- maybeUpdated.traverse { updated =>
+        for {
+          // Update individual cache entry
+          _ <- productCacheRepo.setById(id, updated, DefaultCacheTTL)
+          // Invalidate all-products cache
+          _ <- invalidateAll()
+          // Publish event
+          _ <- productEventRepo.publish(
+            createSuccessEvent(HttpMethod.PUT, Some(id), "db_updated")
+          )
+        } yield ()
+      }
     } yield maybeUpdated)
       .handleErrorWith { error =>
         productEventRepo.publish(
-          ProductEvent.ProductOperationFailed("update", Some(id), error.getMessage)
+          createErrorEvent(HttpMethod.PUT, Some(id), error.getMessage)
         ) *> IO.raiseError(error)
       }
   }
@@ -101,12 +218,26 @@ class ProductServiceImpl(
   def deleteProduct(id: Long): IO[Boolean] = {
     (for {
       deleted <- productDbRepo.delete(id)
-      _ <- if (deleted) productEventRepo.publish(ProductEvent.ProductDeleted(id))
-      else IO.unit
+      _ <- if (deleted) {
+        for {
+          // Invalidate individual cache entry
+          _ <- invalidateById(id)
+          // Invalidate all-products cache
+          _ <- invalidateAll()
+          // Publish event
+          _ <- productEventRepo.publish(
+            createSuccessEvent(HttpMethod.DELETE, Some(id), "db_deleted")
+          )
+        } yield ()
+      } else {
+        productEventRepo.publish(
+          createSuccessEvent(HttpMethod.DELETE, Some(id), "not_found")
+        )
+      }
     } yield deleted)
       .handleErrorWith { error =>
         productEventRepo.publish(
-          ProductEvent.ProductOperationFailed("delete", Some(id), error.getMessage)
+          createErrorEvent(HttpMethod.DELETE, Some(id), error.getMessage)
         ) *> IO.raiseError(error)
       }
   }

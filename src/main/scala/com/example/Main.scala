@@ -43,7 +43,7 @@ object Main extends IOApp {
 
         // Initialize handlers
         val healthCheckHandler = new HealthCheckHandler(xa)
-        val productHandler = new ProductHandler(productService)
+        val productHandler = new ProductHandler(productService) // HTTP handler
 
         // Combine routes
         val httpHandlers = Router(

@@ -2,10 +2,12 @@ package com.example.internal.adapter.repository.product.event
 
 import cats.effect.IO
 import cats.implicits._
+import com.example.internal.adapter.constant.http.HttpMethod
 import com.example.internal.adapter.dto.log.LogMessage
-import com.example.internal.adapter.dto.product.ProductEvent
+import com.example.internal.adapter.dto.product.{ProductEvent, ProductEventDTO}
 import com.example.internal.core.product.port.ProductEventRepository
 import com.example.pkg.kafka.MessageBroker
+
 import java.util.UUID
 
 class ProductEventRepositoryImpl(
@@ -13,69 +15,103 @@ class ProductEventRepositoryImpl(
                                   serviceName: String = "product-service"
                                 ) extends ProductEventRepository {
 
-  def publish(event: ProductEvent): IO[Unit] = {
+  def publish(event: ProductEventDTO): IO[Unit] = {
     val logMessage = createLogMessage(event)
     messageBroker.sendLog(logMessage)
   }
 
-  private def createLogMessage(event: ProductEvent): LogMessage = {
+  private def createLogMessage(event: ProductEventDTO): LogMessage = {
     val (level, message, error, method, path, statusCode, detail) = event match {
-      case ProductEvent.ProductOperationSucceeded(_, detail, _) =>
+      // GET - All products (without productId)
+      case ProductEventDTO(HttpMethod.GET, true, _, detail, _, None) =>
         ("info",
-          s"Product retrieved successfully.",
+          "Products retrieved successfully.",
           None,
-          "GET",
+          HttpMethod.GET,
+          "/api/products",
+          200,
+          Some(detail)
+        )
+
+      // GET - Single product (with productId)
+      case ProductEventDTO(HttpMethod.GET, true, _, detail, _, Some(pid)) =>
+        ("info",
+          s"Product ID:$pid retrieved successfully.",
+          None,
+          HttpMethod.GET,
+          s"/api/products/$pid",
+          200,
+          Some(detail)
+        )
+
+      // POST - Always should have productId after successful creation
+      case ProductEventDTO(HttpMethod.POST, true, _, detail, _, Some(pid)) =>
+        ("info",
+          s"Product ID:$pid created successfully.",
+          None,
+          HttpMethod.POST,
           "/api/products",
           201,
           Some(detail)
         )
 
-      case ProductEvent.ProductCreated(product, _) =>
+      // PUT - Must have productId
+      case ProductEventDTO(HttpMethod.PUT, true, _, detail, _, Some(pid)) =>
         ("info",
-          s"Product created successfully with ID: ${product.id.getOrElse("N/A")}, name: ${product.name}",
+          s"Product ID:$pid updated successfully.",
           None,
-          "POST",
-          "/api/products",
-          201,
-          None
-        )
-
-      case ProductEvent.ProductUpdated(product, _) =>
-        ("info",
-          s"Product updated successfully - ID: ${product.id.getOrElse("N/A")}, name: ${product.name}",
-          None,
-          "PUT",
-          s"/api/products/${product.id.getOrElse("N/A")}",
+          HttpMethod.PUT,
+          s"/api/products/$pid",
           200,
-          None
+          Some(detail)
         )
 
-      case ProductEvent.ProductDeleted(productId, _) =>
+      // DELETE - Must have productId
+      case ProductEventDTO(HttpMethod.DELETE, true, _, detail, _, Some(pid)) =>
         ("info",
-          s"Product deleted successfully - ID: $productId",
+          s"Product ID:$pid deleted successfully.",
           None,
-          "DELETE",
-          s"/api/products/$productId",
+          HttpMethod.DELETE,
+          s"/api/products/$pid",
           200,
-          None
+          Some(detail)
         )
 
-      case ProductEvent.ProductOperationFailed(operation, productId, errorMsg, _) =>
+      // Error cases with specific error messages
+      case ProductEventDTO(method, false, errorMsg, detail, _, maybeId) =>
+        val baseMessage = method match {
+          case HttpMethod.GET =>
+            maybeId.map(pid => s"Product ID:$pid").getOrElse("All products") + " retrieved fail."
+          case HttpMethod.POST => "Product creation failed."
+          case HttpMethod.PUT =>
+            maybeId.map(pid => s"Product ID:$pid update failed.").getOrElse("Product update failed: No ID provided.")
+          case HttpMethod.DELETE =>
+            maybeId.map(pid => s"Product ID:$pid deletion failed.").getOrElse("Product deletion failed: No ID provided.")
+          case _ => "Unknown operation failed."
+        }
+
         ("error",
-          s"Product operation '$operation' failed for ID: ${productId.getOrElse("N/A")}",
-          Some(errorMsg),
-          operation match {
-            case "create" => "POST"
-            case "update" => "PUT"
-            case "delete" => "DELETE"
-            case _ => "GET"
-          },
-          s"/api/products${productId.map(id => s"/$id").getOrElse("")}",
+          baseMessage,
+          Some(errorMsg),  // Using the actual error message from DTO
+          method,
+          maybeId.fold("/api/products")(pid => s"/api/products/$pid"),
           500,
-          None
+          Some(detail)
+        )
+
+      // Catch-all case for unexpected patterns
+      case ProductEventDTO(method, _, msg, detail, _, _) =>
+        ("error",
+          "Unexpected event pattern",
+          Some(msg),
+          method,
+          "/api/products",
+          500,
+          Some(detail)
         )
     }
-    val logMsg = LogMessage(
+
+    LogMessage(
       timestamp = event.timestamp,
       level = level,
       service = serviceName,
@@ -89,8 +125,5 @@ class ProductEventRepositoryImpl(
       error = error,
       detail = detail
     )
-    println(logMsg)
-
-    logMsg
   }
 }

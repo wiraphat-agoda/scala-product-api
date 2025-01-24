@@ -41,4 +41,23 @@ class ProductCacheRepositoryImpl(redisClient: RedisClient) extends ProductCacheR
       } yield ()
     })
   }
+
+  def delAll(): IO[Unit] = {
+    redisClient.use(jedis =>
+      for {
+        keys <- IO(jedis.keys("product:*"))
+        _ <- if (keys.isEmpty) {
+          IO.unit
+        } else {
+          IO(jedis.del(keys.toArray(new Array[String](keys.size)): _*)).void
+        }
+      } yield ()
+    )
+  }
+
+  def delById(productId: Long): IO[Unit] = {
+    redisClient.use(jedis => {
+      IO(jedis.del("product:$productId")).void
+    })
+  }
 }
