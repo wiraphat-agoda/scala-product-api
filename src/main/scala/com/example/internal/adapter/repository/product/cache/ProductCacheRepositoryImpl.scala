@@ -20,11 +20,13 @@ class ProductCacheRepositoryImpl(redisClient: RedisClient[IO]) extends ProductCa
       productList
     })
   }
+
   def setAll(productList: List[Product], ttl: Int)(implicit encoder: Encoder[List[Product]]): IO[Unit] = {
     redisClient.use(jedis => {
       jedis.setex(s"event:all", ttl, productList.asJson.noSpaces)
     })
   }
+
   def getById(productId: Long)(implicit decoder: Decoder[Product]): IO[Option[Product]] = {
     redisClient.use(jedis => {
       for {
