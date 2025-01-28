@@ -41,16 +41,21 @@ object Main extends IOApp {
         val healthCheckHandler = new HealthCheckHandler(xa)
         val productHandler = new ProductHandler(productService) // HTTP handler
 
+        // Combine all domain routes
+        val routers = Router(
+          "/healthz" -> healthCheckHandler.routes,
+          "/products" -> productHandler.routes
+        )
+
         // Combine routes
-        val httpHandlers = Router(
-          "/" -> healthCheckHandler.healthRouter,
-          "/api" -> productHandler.productRouter
+        val httpApp = Router(
+          "/api" -> routers
         ).orNotFound
 
         // Start HTTP server
         BlazeServerBuilder[IO](serverExecutionContext)
           .bindHttp(config.server.port, config.server.host)
-          .withHttpApp(httpHandlers)
+          .withHttpApp(httpApp)
           .serve
           .compile
           .drain
