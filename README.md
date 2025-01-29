@@ -3,9 +3,9 @@ A scalable product management service built with Scala, implementing caching str
 
 ## Overview
 This project demonstrates a modern approach to building microservices using Scala, featuring:
-- RESTful API for product management
+- REST API for product management
 - Lazy loading and write-through caching with Redis
-- Event streaming with Kafka
+- Event streaming with Kafka both producer and consumer
 - PostgreSQL as main storage
 - Functional programming with Cats Effect
 
@@ -40,3 +40,18 @@ POST   /api/products      # Create a new product
 GET    /api/products/:id  # Retrieve a specific product
 PUT    /api/products/:id  # Update a specific product
 DELETE /api/products/:id  # Delete a specific product
+```
+
+## Runs locally
+### Start all docker containers
+```bash
+$ docker-compose up -d
+```
+### Compile Scala source codes
+```bash
+$ sbt clean compile
+```
+### Start server
+```bash
+$ sbt run
+```
