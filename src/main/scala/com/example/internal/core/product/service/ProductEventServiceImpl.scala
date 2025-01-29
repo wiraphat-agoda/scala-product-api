@@ -17,7 +17,7 @@ class ProductEventServiceImpl(
 
   def publish(event: ProductEvent): IO[Unit] = {
     val logMessage = createLogMessage(event)
-    eventProducer.sendLog(logMessage)
+    eventProducer.produce(logMessage)
   }
 
   private def createLogMessage(event: ProductEvent): LogMessage = {

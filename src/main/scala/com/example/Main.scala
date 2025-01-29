@@ -1,10 +1,12 @@
 package com.example
 
 import cats.effect.{ExitCode, IO, IOApp}
+import cats.implicits._
+import fs2.Stream
 import com.example.internal.adapter.handler.health.HealthCheckHandler
 import com.example.internal.adapter.handler.product.ProductHandler
 import com.example.internal.adapter.infrastructure.database.PostgresTransactor
-import com.example.internal.adapter.infrastructure.kafka.KafkaProducer
+import com.example.internal.adapter.infrastructure.kafka.{KafkaConsumer, KafkaProducer}
 import com.example.internal.adapter.infrastructure.redis.RedisClient
 import com.example.internal.adapter.repository.product.cache.ProductCacheRepositoryImpl
 import com.example.internal.adapter.repository.product.db.ProductDbRepositoryImpl
@@ -22,12 +24,12 @@ object Main extends IOApp {
 
   def run(args: List[String]): IO[ExitCode] = {
     appConfig.flatMap { config =>
-      // Create resources for both Database and Kafka
       (for {
         xa <- PostgresTransactor[IO](config.database)
         eventProducer <- KafkaProducer[IO](config.kafka)
+        eventConsumer <- KafkaConsumer[IO](config.kafka)
         redisClient <- RedisClient[IO](config.redis)
-      } yield (xa, eventProducer, redisClient)).use { case (xa, eventProducer, redisClient) =>
+      } yield (xa, eventProducer, eventConsumer, redisClient)).use { case (xa, eventProducer, eventConsumer, redisClient) =>
 
         // Initialize repositories
         val productDbRepo = new ProductDbRepositoryImpl(xa)
@@ -39,27 +41,37 @@ object Main extends IOApp {
 
         // Initialize handlers
         val healthCheckHandler = new HealthCheckHandler(xa)
-        val productHandler = new ProductHandler(productService) // HTTP handler
+        val productHandler = new ProductHandler(productService)
 
-        // Combine all domain routes
-        val routers = Router(
-          "/healthz" -> healthCheckHandler.routes,
-          "/products" -> productHandler.routes
-        )
+        // Define Kafka consumer process
+        val consumerStream = Stream
+          .eval(eventConsumer.consume)
+          .repeat
+          .compile
+          .drain
 
-        // Combine routes
+        // Define HTTP server process
         val httpApp = Router(
-          "/api" -> routers
+          "/api" -> Router(
+            "/healthz" -> healthCheckHandler.routes,
+            "/products" -> productHandler.routes
+          )
         ).orNotFound
 
-        // Start HTTP server
-        BlazeServerBuilder[IO](serverExecutionContext)
+        val serverStream = BlazeServerBuilder[IO](serverExecutionContext)
           .bindHttp(config.server.port, config.server.host)
           .withHttpApp(httpApp)
           .serve
           .compile
           .drain
-          .as(ExitCode.Success)
+
+        // Run both processes concurrently
+        (consumerStream, serverStream)
+          .parMapN((_, _) => ExitCode.Success)
+          .handleErrorWith { error =>
+            IO.delay(println(s"Error occurred: ${error.getMessage}")) *>
+              IO.pure(ExitCode.Error)
+          }
       }
     }.handleErrorWith { error =>
       IO.delay(println(s"Application failed to start: ${error.getMessage}")) *>

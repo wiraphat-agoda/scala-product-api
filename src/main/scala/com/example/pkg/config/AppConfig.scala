@@ -21,14 +21,28 @@ case class ServerConfig(
                        )
 
 case class KafkaConfig(
+                        // Common configurations
                         bootstrapServers: String,
                         topic: String,
                         clientId: String,
+
+                        // Producer specific configurations
                         acks: String = "all",
                         retries: Int = 3,
                         batchSize: Int = 16384,
                         lingerMs: Int = 1,
-                        bufferMemory: Int = 33554432
+                        bufferMemory: Int = 33554432,
+
+                        // Consumer specific configurations
+                        groupId: String = "consumer-1",
+                        autoOffsetReset: String = "earliest",
+                        enableAutoCommit: Boolean = true,
+                        autoCommitIntervalMs: Int = 1000,
+                        sessionTimeoutMs: Int = 30000,
+                        maxPollRecords: Int = 500,
+                        fetchMinBytes: Int = 1,
+                        fetchMaxWaitMs: Int = 500,
+                        maxPartitionFetchBytes: Int = 1048576
                       )
 
 case class RedisConfig(
